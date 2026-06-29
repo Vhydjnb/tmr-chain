@@ -1,0 +1,18 @@
+{
+  "name": "tmr-chain",
+  "version": "1.0.0",
+  "description": "TMR-20 Blockchain — World Treasury Management Reserve",
+  "main": "api/server.js",
+  "scripts": {
+    "start": "node api/server.js",
+    "dev": "nodemon api/server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "crypto": "^1.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
