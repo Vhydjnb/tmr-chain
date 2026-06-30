@@ -37,7 +37,7 @@ const CHAIN_CONFIG = {
   genesisAddress: 'TMR000000000000000000000000000000GENESIS',
 };
 
-const DATA_FILE = path.join(__dirname, '..', 'data', 'chain.json');
+const DATA_FILE = path.join(__dirname, 'chain-data.json');
 
 // ──────────────────────────────────────────────
 // STATE
