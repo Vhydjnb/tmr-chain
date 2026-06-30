@@ -1,224 +1,414 @@
 /**
- * TMR CHAIN — Full RPC Server
- * Compatible with Web3 / ethers.js style calls
- * Deploy FREE on Render.com
+ * TMR Chain — Proof-of-Authority RPC Server
+ * Chain: TMR-2007
+ * Supply: 10,000,000,000 TMR (10B)
+ * Decimals: 1
+ * Standard: TMR-20
+ *
+ * Single-validator PoA chain. Auto-mines a block every BLOCK_TIME ms.
+ * Persists state to /data/chain.json so it survives restarts (best effort —
+ * Render free tier has an ephemeral disk, so state resets on redeploy/spindown
+ * unless you attach a persistent disk on a paid plan).
  */
 
 const express = require('express');
-const cors = require('cors');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const cors = require('cors');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-
 app.use(cors());
 app.use(express.json());
 
-// ── TMR CHAIN CONFIG ──
-const TMR_CHAIN = {
-  chainId: '0x544D52', // TMR in hex
-  chainIdDecimal: 5524050,
-  chainName: 'TMR Chain Mainnet',
-  nativeCurrency: {
-    name: 'TMR Coin',
-    symbol: 'TMR',
-    decimals: 6,
-  },
-  rpcUrls: ['https://tmr-chain.onrender.com/rpc'],
-  blockExplorerUrls: ['https://tmr-chain.vercel.app'],
-  standard: 'TMR-20',
-  algorandAssetId: 3620615556,
-  wtmrAssetId: 3620615556,
-  myvAssetId: 3620967448,
+// ──────────────────────────────────────────────
+// CONFIG
+// ──────────────────────────────────────────────
+const CHAIN_CONFIG = {
+  name: 'TMR Chain Mainnet',
+  symbol: 'TMR',
+  standard: 'TMR-2007',
+  chainIdHex: '0x544D52',
+  chainIdDec: 5524050,
+  decimals: 1,
+  totalSupply: '10000000000', // 10B whole units (10,000,000,000.0 with 1 decimal)
+  blockTimeMs: 6000,
+  validator: 'TMR-VALIDATOR-01',
+  genesisAddress: 'TMR000000000000000000000000000000GENESIS',
 };
 
-// ── MOCK BLOCKCHAIN STATE ──
-let blockHeight = 62596272;
-let transactions = [];
-let tokens = {
-  WTMR: {
-    name: 'Treasury Management Reserve',
-    symbol: 'WTMR',
-    assetId: 3620615556,
-    decimals: 1,
-    totalSupply: 10000000000,
-    network: 'Algorand',
-  },
-  MYV: {
-    name: 'MultiChain Yield Venture',
-    symbol: 'MYV',
-    assetId: 3620967448,
-    decimals: 6,
-    totalSupply: 210000000,
-    network: 'Algorand',
-  },
-  TMR: {
-    name: 'TMR Coin',
-    symbol: 'TMR',
-    assetId: null,
-    decimals: 6,
-    totalSupply: 21000000000,
-    network: 'TMR Chain',
-  },
+const DATA_FILE = path.join(__dirname, '..', 'data', 'chain.json');
+
+// ──────────────────────────────────────────────
+// STATE
+// ──────────────────────────────────────────────
+let state = {
+  blocks: [],
+  txPool: [],       // pending transactions waiting for next block
+  balances: {},      // address -> integer smallest units (1 decimal => value * 10)
+  txIndex: {},        // txHash -> {blockNumber, ...tx}
 };
 
-// Auto increment block
-setInterval(() => { blockHeight++; }, 4000);
+const UNIT_MULTIPLIER = 10 ** CHAIN_CONFIG.decimals; // decimals = 1 => *10
 
-// ── ROOT ──
-app.get('/', (req, res) => {
-  res.json({
-    name: '🏦 TMR Chain RPC',
-    version: '1.0.0',
-    status: 'online',
-    chainId: TMR_CHAIN.chainId,
-    chainIdDecimal: TMR_CHAIN.chainIdDecimal,
-    standard: 'TMR-20',
-    rpc: 'https://tmr-chain.onrender.com/rpc',
-    explorer: 'https://tmr-chain.vercel.app',
-    tokens: {
-      WTMR: 3620615556,
-      MYV: 3620967448,
-    },
-  });
-});
+function toSmallestUnits(amountTMR) {
+  return Math.round(Number(amountTMR) * UNIT_MULTIPLIER);
+}
+function toDisplayUnits(smallest) {
+  return (smallest / UNIT_MULTIPLIER).toFixed(CHAIN_CONFIG.decimals);
+}
 
-// ── RPC ENDPOINT ──
-app.post('/rpc', (req, res) => {
-  const { method, params, id } = req.body;
-
-  const respond = (result) => res.json({ jsonrpc: '2.0', id, result });
-  const error = (msg) => res.json({ jsonrpc: '2.0', id, error: { code: -32600, message: msg } });
-
-  switch (method) {
-
-    case 'tmr_chainId':
-    case 'eth_chainId':
-      return respond(TMR_CHAIN.chainId);
-
-    case 'net_version':
-      return respond(String(TMR_CHAIN.chainIdDecimal));
-
-    case 'eth_blockNumber':
-    case 'tmr_blockNumber':
-      return respond('0x' + blockHeight.toString(16));
-
-    case 'eth_getBalance':
-    case 'tmr_getBalance':
-      return respond('0x' + (1000000 * 1e6).toString(16));
-
-    case 'eth_gasPrice':
-    case 'tmr_gasPrice':
-      return respond('0x' + (1000).toString(16)); // 0.001 TMR
-
-    case 'eth_estimateGas':
-    case 'tmr_estimateGas':
-      return respond('0x5208');
-
-    case 'eth_getTransactionCount':
-    case 'tmr_getTransactionCount':
-      return respond('0x0');
-
-    case 'tmr_getChainInfo':
-      return respond(TMR_CHAIN);
-
-    case 'tmr_getTokens':
-      return respond(tokens);
-
-    case 'tmr_getToken':
-      const symbol = params && params[0];
-      if (tokens[symbol]) return respond(tokens[symbol]);
-      return error('Token not found');
-
-    case 'tmr_getBlockHeight':
-      return respond(blockHeight);
-
-    case 'tmr_sendTransaction':
-      const tx = {
-        hash: '0x' + crypto.randomBytes(32).toString('hex'),
-        from: params && params[0] && params[0].from,
-        to: params && params[0] && params[0].to,
-        value: params && params[0] && params[0].value,
-        timestamp: Date.now(),
-        status: 'confirmed',
-        blockNumber: blockHeight,
-      };
-      transactions.push(tx);
-      return respond(tx.hash);
-
-    case 'tmr_getTransactions':
-      return respond(transactions.slice(-10));
-
-    case 'web3_clientVersion':
-      return respond('TMRChain/v1.0.0');
-
-    default:
-      return error(`Method ${method} not supported`);
+function loadState() {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const raw = fs.readFileSync(DATA_FILE, 'utf8');
+      state = JSON.parse(raw);
+      console.log(`[TMR] Loaded state: ${state.blocks.length} blocks`);
+      return;
+    }
+  } catch (e) {
+    console.error('[TMR] Failed to load state, starting fresh:', e.message);
   }
-});
+  genesisInit();
+}
 
-// ── NETWORK INFO ──
-app.get('/network', (req, res) => {
+function saveState() {
+  try {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(state));
+  } catch (e) {
+    console.error('[TMR] Failed to save state:', e.message);
+  }
+}
+
+function genesisInit() {
+  console.log('[TMR] Initializing genesis block...');
+  const totalSmallest = toSmallestUnits(CHAIN_CONFIG.totalSupply);
+  state.balances[CHAIN_CONFIG.genesisAddress] = totalSmallest;
+
+  const genesisBlock = {
+    number: 0,
+    hash: hashBlock(0, '0x0', [], Date.now()),
+    parentHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
+    timestamp: Date.now(),
+    validator: CHAIN_CONFIG.validator,
+    transactions: [],
+    txCount: 0,
+  };
+
+  state.blocks = [genesisBlock];
+  state.txPool = [];
+  state.txIndex = {};
+  saveState();
+}
+
+// ──────────────────────────────────────────────
+// HELPERS
+// ──────────────────────────────────────────────
+function hashBlock(number, parentHash, txs, timestamp) {
+  const data = `${number}|${parentHash}|${JSON.stringify(txs)}|${timestamp}`;
+  return '0x' + crypto.createHash('sha256').update(data).digest('hex');
+}
+
+function hashTx(from, to, amount, nonce, timestamp) {
+  const data = `${from}|${to}|${amount}|${nonce}|${timestamp}`;
+  return '0x' + crypto.createHash('sha256').update(data).digest('hex');
+}
+
+function isValidAddress(addr) {
+  return typeof addr === 'string' && /^TMR[a-zA-Z0-9]{10,50}$/.test(addr);
+}
+
+function getLatestBlock() {
+  return state.blocks[state.blocks.length - 1];
+}
+
+function getBalance(address) {
+  return state.balances[address] || 0;
+}
+
+// ──────────────────────────────────────────────
+// CORE CHAIN LOGIC
+// ──────────────────────────────────────────────
+function submitTransaction({ from, to, amount }) {
+  if (!isValidAddress(from) || !isValidAddress(to)) {
+    throw { code: -32602, message: 'Invalid address format. Addresses must start with TMR.' };
+  }
+  const amt = Number(amount);
+  if (!amt || amt <= 0) {
+    throw { code: -32602, message: 'Invalid amount' };
+  }
+
+  const smallestAmt = toSmallestUnits(amt);
+  const balance = getBalance(from);
+
+  if (balance < smallestAmt) {
+    throw { code: -32000, message: 'Insufficient balance' };
+  }
+
+  const timestamp = Date.now();
+  const nonce = state.txPool.length + state.blocks.reduce((a, b) => a + b.txCount, 0);
+  const txHash = hashTx(from, to, smallestAmt, nonce, timestamp);
+
+  const tx = {
+    hash: txHash,
+    from,
+    to,
+    amount: toDisplayUnits(smallestAmt),
+    amountSmallest: smallestAmt,
+    fee: toDisplayUnits(UNIT_MULTIPLIER * 0), // fee = 0 on this PoA testnet config (adjust as needed)
+    timestamp,
+    status: 'pending',
+  };
+
+  // Optimistically reserve balance
+  state.balances[from] = balance - smallestAmt;
+  state.balances[to] = getBalance(to) + smallestAmt;
+
+  state.txPool.push(tx);
+  saveState();
+  return tx;
+}
+
+function mineBlock() {
+  const latest = getLatestBlock();
+  const txsToInclude = state.txPool.splice(0, state.txPool.length);
+
+  const timestamp = Date.now();
+  const number = latest.number + 1;
+  const parentHash = latest.hash;
+  const hash = hashBlock(number, parentHash, txsToInclude, timestamp);
+
+  txsToInclude.forEach(tx => {
+    tx.status = 'confirmed';
+    tx.blockNumber = number;
+    state.txIndex[tx.hash] = { ...tx };
+  });
+
+  const block = {
+    number,
+    hash,
+    parentHash,
+    timestamp,
+    validator: CHAIN_CONFIG.validator,
+    transactions: txsToInclude,
+    txCount: txsToInclude.length,
+  };
+
+  state.blocks.push(block);
+
+  // Keep last 500 blocks in memory/storage to bound file size on free tier
+  if (state.blocks.length > 500) {
+    state.blocks = state.blocks.slice(state.blocks.length - 500);
+  }
+
+  saveState();
+  console.log(`[TMR] Mined block #${number} (${txsToInclude.length} txs) hash=${hash.slice(0, 12)}...`);
+  return block;
+}
+
+// ──────────────────────────────────────────────
+// REST API ROUTES
+// ──────────────────────────────────────────────
+
+// Health check
+app.get('/health', (req, res) => {
   res.json({
-    ...TMR_CHAIN,
-    blockHeight,
-    status: 'online',
+    status: 'ok',
+    chain: CHAIN_CONFIG.name,
+    latestBlock: getLatestBlock().number,
     uptime: process.uptime(),
   });
 });
 
-// ── ADD NETWORK (MetaMask/Trust Wallet format) ──
-app.get('/add-network', (req, res) => {
+// Network info
+app.get('/network', (req, res) => {
   res.json({
-    method: 'wallet_addEthereumChain',
-    params: [{
-      chainId: TMR_CHAIN.chainId,
-      chainName: TMR_CHAIN.chainName,
-      nativeCurrency: TMR_CHAIN.nativeCurrency,
-      rpcUrls: TMR_CHAIN.rpcUrls,
-      blockExplorerUrls: TMR_CHAIN.blockExplorerUrls,
-    }],
+    name: CHAIN_CONFIG.name,
+    symbol: CHAIN_CONFIG.symbol,
+    standard: CHAIN_CONFIG.standard,
+    chainId: CHAIN_CONFIG.chainIdHex,
+    chainIdDecimal: CHAIN_CONFIG.chainIdDec,
+    decimals: CHAIN_CONFIG.decimals,
+    totalSupply: CHAIN_CONFIG.totalSupply,
+    validator: CHAIN_CONFIG.validator,
+    consensus: 'Proof-of-Authority',
+    blockTimeMs: CHAIN_CONFIG.blockTimeMs,
+    latestBlock: getLatestBlock().number,
   });
 });
 
-// ── TOKENS ──
-app.get('/tokens', (req, res) => res.json(tokens));
-
-app.get('/tokens/:symbol', (req, res) => {
-  const token = tokens[req.params.symbol.toUpperCase()];
-  if (!token) return res.status(404).json({ error: 'Token not found' });
-  res.json(token);
-});
-
-// ── BLOCKS ──
-app.get('/blocks/latest', (req, res) => {
+// Token info (TMR-20 style)
+app.get('/tokens', (req, res) => {
   res.json({
-    number: blockHeight,
-    hash: '0x' + crypto.createHash('sha256').update(String(blockHeight)).digest('hex'),
-    timestamp: Date.now(),
-    transactions: transactions.slice(-5).length,
-    network: 'TMR Chain',
+    name: 'TMR Token',
+    symbol: CHAIN_CONFIG.symbol,
+    standard: CHAIN_CONFIG.standard,
+    decimals: CHAIN_CONFIG.decimals,
+    totalSupply: CHAIN_CONFIG.totalSupply,
+    circulatingSupply: toDisplayUnits(
+      Object.entries(state.balances)
+        .filter(([addr]) => addr !== CHAIN_CONFIG.genesisAddress)
+        .reduce((sum, [, bal]) => sum + bal, 0)
+    ),
+    genesisAddress: CHAIN_CONFIG.genesisAddress,
+    holders: Object.keys(state.balances).filter(a => getBalance(a) > 0).length,
   });
 });
 
-// ── HEALTH ──
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', blockHeight, uptime: process.uptime() });
+// Get latest N blocks
+app.get('/blocks', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 10, 100);
+  const blocks = state.blocks.slice(-limit).reverse().map(b => ({
+    number: b.number,
+    hash: b.hash,
+    parentHash: b.parentHash,
+    timestamp: b.timestamp,
+    validator: b.validator,
+    txCount: b.txCount,
+  }));
+  res.json({ blocks });
 });
 
+// Get single block by number or hash
+app.get('/block/:id', (req, res) => {
+  const id = req.params.id;
+  let block;
+  if (/^\d+$/.test(id)) {
+    block = state.blocks.find(b => b.number === parseInt(id));
+  } else {
+    block = state.blocks.find(b => b.hash === id);
+  }
+  if (!block) return res.status(404).json({ error: 'Block not found' });
+  res.json(block);
+});
+
+// Get latest N transactions
+app.get('/transactions', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 10, 100);
+  const allTxs = [];
+  for (let i = state.blocks.length - 1; i >= 0 && allTxs.length < limit; i--) {
+    const b = state.blocks[i];
+    for (let j = b.transactions.length - 1; j >= 0 && allTxs.length < limit; j--) {
+      allTxs.push(b.transactions[j]);
+    }
+  }
+  res.json({ transactions: allTxs });
+});
+
+// Get single transaction by hash
+app.get('/tx/:hash', (req, res) => {
+  const tx = state.txIndex[req.params.hash] ||
+    state.txPool.find(t => t.hash === req.params.hash);
+  if (!tx) return res.status(404).json({ error: 'Transaction not found' });
+  res.json(tx);
+});
+
+// Get balance for an address
+app.get('/balance/:address', (req, res) => {
+  const address = req.params.address;
+  if (!isValidAddress(address)) {
+    return res.status(400).json({ error: 'Invalid address format' });
+  }
+  res.json({
+    address,
+    balance: toDisplayUnits(getBalance(address)),
+    symbol: CHAIN_CONFIG.symbol,
+  });
+});
+
+// Submit a transaction (send TMR)
+app.post('/tx/send', (req, res) => {
+  try {
+    const { from, to, amount } = req.body;
+    const tx = submitTransaction({ from, to, amount });
+    res.json({ success: true, tx });
+  } catch (err) {
+    const code = err.code || -32603;
+    res.status(400).json({ success: false, error: err.message || 'Internal error', code });
+  }
+});
+
+// Generic search — address / tx hash / block number
+app.get('/search/:query', (req, res) => {
+  const q = req.params.query;
+
+  if (/^\d+$/.test(q)) {
+    const block = state.blocks.find(b => b.number === parseInt(q));
+    if (block) return res.json({ type: 'block', result: block });
+  }
+
+  if (q.startsWith('0x')) {
+    const tx = state.txIndex[q] || state.txPool.find(t => t.hash === q);
+    if (tx) return res.json({ type: 'transaction', result: tx });
+    const block = state.blocks.find(b => b.hash === q);
+    if (block) return res.json({ type: 'block', result: block });
+  }
+
+  if (isValidAddress(q)) {
+    return res.json({
+      type: 'address',
+      result: { address: q, balance: toDisplayUnits(getBalance(q)) },
+    });
+  }
+
+  res.status(404).json({ error: 'No matching block, transaction, or address found' });
+});
+
+// Faucet — for testing only, gives free TMR from genesis
+app.post('/faucet', (req, res) => {
+  try {
+    const { address } = req.body;
+    if (!isValidAddress(address)) {
+      return res.status(400).json({ error: 'Invalid address format' });
+    }
+    const tx = submitTransaction({
+      from: CHAIN_CONFIG.genesisAddress,
+      to: address,
+      amount: 1000, // 1000 TMR test funds
+    });
+    res.json({ success: true, message: 'Sent 1000 TMR from faucet', tx });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Root
+app.get('/', (req, res) => {
+  res.json({
+    chain: CHAIN_CONFIG.name,
+    message: 'TMR Chain RPC is live',
+    endpoints: [
+      'GET  /health',
+      'GET  /network',
+      'GET  /tokens',
+      'GET  /blocks?limit=10',
+      'GET  /block/:numberOrHash',
+      'GET  /transactions?limit=10',
+      'GET  /tx/:hash',
+      'GET  /balance/:address',
+      'POST /tx/send {from,to,amount}',
+      'POST /faucet {address}',
+      'GET  /search/:query',
+    ],
+  });
+});
+
+// ──────────────────────────────────────────────
+// BOOT
+// ──────────────────────────────────────────────
+loadState();
+
+// Auto-mine blocks on a timer (PoA — single validator)
+setInterval(() => {
+  try {
+    mineBlock();
+  } catch (e) {
+    console.error('[TMR] Mining error:', e.message);
+  }
+}, CHAIN_CONFIG.blockTimeMs);
+
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`
-  ╔══════════════════════════════════════╗
-  ║      TMR CHAIN RPC SERVER v1.0       ║
-  ║      Standard: TMR-20                ║
-  ╠══════════════════════════════════════╣
-  ║  Port:     ${PORT}                        ║
-  ║  ChainID:  ${TMR_CHAIN.chainId}              ║
-  ║  RPC:      /rpc                      ║
-  ║  Network:  /network                  ║
-  ║  Tokens:   /tokens                   ║
-  ╚══════════════════════════════════════╝
-  `);
+  console.log(`[TMR] RPC server running on port ${PORT}`);
+  console.log(`[TMR] Chain: ${CHAIN_CONFIG.name} | Symbol: ${CHAIN_CONFIG.symbol} | Decimals: ${CHAIN_CONFIG.decimals}`);
 });
-
-module.exports = app;

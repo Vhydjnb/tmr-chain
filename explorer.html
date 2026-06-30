@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TMR Chain Explorer</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0A0A0F;
+    --surface: #111118;
+    --surface2: #16161F;
+    --border: #1E1E2E;
+    --teal: #00E5C8;
+    --teal-dim: rgba(0,229,200,0.12);
+    --teal-glow: rgba(0,229,200,0.25);
+    --gold: #C8A84B;
+    --gold-dim: rgba(200,168,75,0.12);
+    --text: #E8E8F0;
+    --text-muted: #6B6B8A;
+    --text-dim: #3A3A5C;
+    --red: #FF4D6A;
+    --green: #00E5C8;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Grotesk', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(10,10,15,0.85);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .nav-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  .logo-badge {
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(135deg, var(--teal), #0099AA);
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    color: #0A0A0F;
+  }
+
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .nav-links a {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 6px 12px;
+    border-radius: 6px;
+    transition: all 0.15s;
+  }
+
+  .nav-links a:hover { color: var(--text); background: var(--surface2); }
+
+  .nav-chip {
+    background: var(--teal-dim);
+    color: var(--teal);
+    border: 1px solid rgba(0,229,200,0.2);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 20px;
+    letter-spacing: 0.5px;
+  }
+
+  /* ── HERO ── */
+  .hero {
+    padding: 64px 24px 48px;
+    max-width: 900px;
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .hero-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--teal);
+    margin-bottom: 20px;
+  }
+
+  .pulse-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--teal);
+    border-radius: 50%;
+    animation: pulse 2s ease infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 var(--teal-glow); }
+    50% { opacity: 0.7; transform: scale(1.1); box-shadow: 0 0 0 6px transparent; }
+  }
+
+  .hero h1 {
+    font-size: clamp(32px, 6vw, 52px);
+    font-weight: 700;
+    letter-spacing: -1.5px;
+    line-height: 1.1;
+    margin-bottom: 12px;
+    color: var(--text);
+  }
+
+  .hero h1 span {
+    color: var(--teal);
+  }
+
+  .hero-sub {
+    font-size: 15px;
+    color: var(--text-muted);
+    margin-bottom: 36px;
+  }
+
+  /* ── CHAIN VIZ (signature element) ── */
+  .chain-viz {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin: 0 auto 40px;
+    overflow: hidden;
+    height: 52px;
+  }
+
+  .chain-block {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    position: relative;
+    animation: blockSlide 8s linear infinite;
+    flex-shrink: 0;
+  }
+
+  .chain-block.active {
+    border-color: var(--teal);
+    color: var(--teal);
+    background: var(--teal-dim);
+    box-shadow: 0 0 16px var(--teal-glow);
+  }
+
+  .chain-link {
+    width: 24px;
+    height: 2px;
+    background: var(--border);
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  .chain-link::after {
+    content: '';
+    position: absolute;
+    left: 0; top: 0;
+    width: 0%;
+    height: 100%;
+    background: var(--teal);
+    animation: linkFill 8s linear infinite;
+  }
+
+  @keyframes blockSlide {
+    0% { opacity: 0.4; }
+    20% { opacity: 1; }
+    80% { opacity: 1; }
+    100% { opacity: 0.4; }
+  }
+
+  @keyframes linkFill {
+    0% { width: 0%; }
+    50% { width: 100%; }
+    100% { width: 100%; }
+  }
+
+  /* ── SEARCH ── */
+  .search-wrap {
+    max-width: 640px;
+    margin: 0 auto;
+    position: relative;
+  }
+
+  .search-wrap input {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 56px 14px 18px;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 14px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .search-wrap input::placeholder { color: var(--text-dim); }
+  .search-wrap input:focus {
+    border-color: var(--teal);
+    box-shadow: 0 0 0 3px var(--teal-dim);
+  }
+
+  .search-btn {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--teal);
+    border: none;
+    border-radius: 8px;
+    width: 36px;
+    height: 36px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #0A0A0F;
+    transition: opacity 0.15s;
+  }
+
+  .search-btn:hover { opacity: 0.85; }
+
+  .search-hint {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  /* ── STATS BAR ── */
+  .stats-bar {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+  }
+
+  .stats-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: flex;
+    align-items: stretch;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .stats-inner::-webkit-scrollbar { display: none; }
+
+  .stat-item {
+    padding: 14px 28px 14px 0;
+    margin-right: 28px;
+    border-right: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .stat-item:last-child { border-right: none; }
+
+  .stat-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  .stat-icon.teal { background: var(--teal-dim); }
+  .stat-icon.gold { background: var(--gold-dim); }
+
+  .stat-label { font-size: 11px; color: var(--text-muted); margin-bottom: 2px; }
+  .stat-value {
+    font-family: 'Space Mono', monospace;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .stat-value.up { color: var(--teal); }
+  .stat-value.gold { color: var(--gold); }
+
+  /* ── MAIN GRID ── */
+  .main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px 24px 64px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+
+  @media (max-width: 720px) { .main { grid-template-columns: 1fr; } }
+
+  /* ── PANELS ── */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+
+  .panel-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .panel-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .panel-title-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--teal);
+  }
+
+  .panel-more {
+    font-size: 12px;
+    color: var(--teal);
+    text-decoration: none;
+    opacity: 0.8;
+  }
+
+  .panel-more:hover { opacity: 1; }
+
+  /* ── BLOCK LIST ── */
+  .block-row {
+    padding: 13px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    transition: background 0.1s;
+    cursor: pointer;
+  }
+
+  .block-row:last-child { border-bottom: none; }
+  .block-row:hover { background: var(--surface2); }
+
+  .block-num-wrap {
+    background: var(--teal-dim);
+    border: 1px solid rgba(0,229,200,0.15);
+    border-radius: 8px;
+    width: 42px;
+    height: 42px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .block-num-label { font-size: 8px; color: var(--teal); font-weight: 600; letter-spacing: 0.5px; }
+  .block-num {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--teal);
+  }
+
+  .block-info { flex: 1; min-width: 0; }
+
+  .block-hash {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .block-meta {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  .block-txs {
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .tx-count {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .tx-label { font-size: 10px; color: var(--text-dim); }
+
+  /* ── TX LIST ── */
+  .tx-row {
+    padding: 13px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    transition: background 0.1s;
+    cursor: pointer;
+  }
+
+  .tx-row:last-child { border-bottom: none; }
+  .tx-row:hover { background: var(--surface2); }
+
+  .tx-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: var(--gold-dim);
+    border: 1px solid rgba(200,168,75,0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 14px;
+  }
+
+  .tx-info { flex: 1; min-width: 0; }
+
+  .tx-hash {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--teal);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tx-addrs {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tx-amount {
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .tx-val {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--gold);
+  }
+
+  .tx-fee { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+
+  /* ── NETWORK INFO CARD ── */
+  .info-card {
+    grid-column: 1 / -1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+  }
+
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+  }
+
+  .info-field {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+  }
+
+  .info-key {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+
+  .info-val {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    color: var(--text);
+    font-weight: 700;
+    word-break: break-all;
+  }
+
+  .info-val.teal { color: var(--teal); }
+  .info-val.gold { color: var(--gold); }
+
+  /* ── FOOTER ── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 20px 24px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  footer span { color: var(--teal); }
+
+  /* ── BADGE ── */
+  .badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    letter-spacing: 0.3px;
+  }
+
+  .badge-success { background: rgba(0,229,200,0.12); color: var(--teal); }
+  .badge-pending { background: rgba(200,168,75,0.12); color: var(--gold); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pulse-dot, .chain-block, .chain-link::after { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a href="#" class="nav-logo">
+    <div class="logo-badge">T</div>
+    TMR Chain
+  </a>
+  <div class="nav-links">
+    <span class="nav-chip">MAINNET</span>
+    <a href="#">Blocks</a>
+    <a href="#">Txns</a>
+    <a href="#">Tokens</a>
+    <a href="#">Network</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-eyebrow">
+    <div class="pulse-dot"></div>
+    Live Network
+  </div>
+  <h1>Explore <span>TMR Chain</span></h1>
+  <p class="hero-sub">Browse blocks, transactions, and addresses on the TMR Chain Mainnet</p>
+
+  <!-- Chain Visualizer (signature element) -->
+  <div class="chain-viz" aria-hidden="true">
+    <div class="chain-block">#5524044</div>
+    <div class="chain-link"></div>
+    <div class="chain-block">#5524045</div>
+    <div class="chain-link"></div>
+    <div class="chain-block">#5524046</div>
+    <div class="chain-link"></div>
+    <div class="chain-block">#5524047</div>
+    <div class="chain-link"></div>
+    <div class="chain-block active">#5524050 ◆ LATEST</div>
+  </div>
+
+  <!-- Search -->
+  <div class="search-wrap">
+    <input type="text" placeholder="Search by address, tx hash, or block number…" id="searchInput" />
+    <button class="search-btn" onclick="doSearch()">
+      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+        <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+      </svg>
+    </button>
+  </div>
+  <div class="search-hint">
+    <span>Address</span>
+    <span>·</span>
+    <span>Tx Hash</span>
+    <span>·</span>
+    <span>Block #</span>
+  </div>
+</div>
+
+<!-- STATS BAR -->
+<div class="stats-bar">
+  <div class="stats-inner">
+    <div class="stat-item">
+      <div class="stat-icon teal">⛓</div>
+      <div>
+        <div class="stat-label">Latest Block</div>
+        <div class="stat-value up" id="latestBlock">5,524,050</div>
+      </div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-icon teal">⚡</div>
+      <div>
+        <div class="stat-label">Transactions</div>
+        <div class="stat-value" id="totalTxns">1,284,091</div>
+      </div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-icon gold">◎</div>
+      <div>
+        <div class="stat-label">Chain ID</div>
+        <div class="stat-value gold">5,524,050</div>
+      </div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-icon gold">⬡</div>
+      <div>
+        <div class="stat-label">Symbol</div>
+        <div class="stat-value gold">TMR</div>
+      </div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-icon teal">🔗</div>
+      <div>
+        <div class="stat-label">Standard</div>
+        <div class="stat-value">TMR-2007</div>
+      </div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-icon teal">💎</div>
+      <div>
+        <div class="stat-label">Decimals</div>
+        <div class="stat-value">1</div>
+      </div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-icon gold">∑</div>
+      <div>
+        <div class="stat-label">Total Supply</div>
+        <div class="stat-value gold">10B TMR</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN GRID -->
+<div class="main">
+
+  <!-- Latest Blocks -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">
+        <div class="panel-title-dot"></div>
+        Latest Blocks
+      </div>
+      <a href="#" class="panel-more">View all →</a>
+    </div>
+
+    <div class="block-row">
+      <div class="block-num-wrap"><div class="block-num-label">BLK</div><div class="block-num">5524050</div></div>
+      <div class="block-info">
+        <div class="block-hash">0x4a3f…d9e2</div>
+        <div class="block-meta">2s ago · Validator: TMR-V1</div>
+      </div>
+      <div class="block-txs"><div class="tx-count">12</div><div class="tx-label">txns</div></div>
+    </div>
+    <div class="block-row">
+      <div class="block-num-wrap"><div class="block-num-label">BLK</div><div class="block-num">5524049</div></div>
+      <div class="block-info">
+        <div class="block-hash">0xb7c1…3a4f</div>
+        <div class="block-meta">8s ago · Validator: TMR-V2</div>
+      </div>
+      <div class="block-txs"><div class="tx-count">7</div><div class="tx-label">txns</div></div>
+    </div>
+    <div class="block-row">
+      <div class="block-num-wrap"><div class="block-num-label">BLK</div><div class="block-num">5524048</div></div>
+      <div class="block-info">
+        <div class="block-hash">0x9d2e…7b1c</div>
+        <div class="block-meta">15s ago · Validator: TMR-V1</div>
+      </div>
+      <div class="block-txs"><div class="tx-count">19</div><div class="tx-label">txns</div></div>
+    </div>
+    <div class="block-row">
+      <div class="block-num-wrap"><div class="block-num-label">BLK</div><div class="block-num">5524047</div></div>
+      <div class="block-info">
+        <div class="block-hash">0xe5a8…2d9b</div>
+        <div class="block-meta">22s ago · Validator: TMR-V3</div>
+      </div>
+      <div class="block-txs"><div class="tx-count">4</div><div class="tx-label">txns</div></div>
+    </div>
+    <div class="block-row">
+      <div class="block-num-wrap"><div class="block-num-label">BLK</div><div class="block-num">5524046</div></div>
+      <div class="block-info">
+        <div class="block-hash">0xf1c3…8e5d</div>
+        <div class="block-meta">30s ago · Validator: TMR-V2</div>
+      </div>
+      <div class="block-txs"><div class="tx-count">23</div><div class="tx-label">txns</div></div>
+    </div>
+  </div>
+
+  <!-- Latest Transactions -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">
+        <div class="panel-title-dot"></div>
+        Latest Transactions
+      </div>
+      <a href="#" class="panel-more">View all →</a>
+    </div>
+
+    <div class="tx-row">
+      <div class="tx-icon">↗</div>
+      <div class="tx-info">
+        <div class="tx-hash">0x7f3a2b1c4d5e6f…</div>
+        <div class="tx-addrs">TMRa3x…f9d → TMRb7c…2e1</div>
+      </div>
+      <div class="tx-amount">
+        <div class="tx-val">142.50 TMR</div>
+        <div class="tx-fee">Fee: 0.001</div>
+      </div>
+    </div>
+    <div class="tx-row">
+      <div class="tx-icon">↗</div>
+      <div class="tx-info">
+        <div class="tx-hash">0x2e9d1a7b3c4f8e…</div>
+        <div class="tx-addrs">TMRc9f…a3b → TMRd2e…7c4</div>
+      </div>
+      <div class="tx-amount">
+        <div class="tx-val">50.000 TMR</div>
+        <div class="tx-fee">Fee: 0.001</div>
+      </div>
+    </div>
+    <div class="tx-row">
+      <div class="tx-icon">↗</div>
+      <div class="tx-info">
+        <div class="tx-hash">0x8b5f9e2a1d7c3b…</div>
+        <div class="tx-addrs">TMRe4a…b8f → TMRf6d…3c9</div>
+      </div>
+      <div class="tx-amount">
+        <div class="tx-val">1,000.0 TMR</div>
+        <div class="tx-fee">Fee: 0.001</div>
+      </div>
+    </div>
+    <div class="tx-row">
+      <div class="tx-icon">↗</div>
+      <div class="tx-info">
+        <div class="tx-hash">0x4c7a3f8b2e1d9c…</div>
+        <div class="tx-addrs">TMRg7b…e2a → TMRh1c…5d8</div>
+      </div>
+      <div class="tx-amount">
+        <div class="tx-val">25.750 TMR</div>
+        <div class="tx-fee">Fee: 0.001</div>
+      </div>
+    </div>
+    <div class="tx-row">
+      <div class="tx-icon">↗</div>
+      <div class="tx-info">
+        <div class="tx-hash">0x1d6e9b4a2f7c8d…</div>
+        <div class="tx-addrs">TMRi5e…f3b → TMRj9a…4c7</div>
+      </div>
+      <div class="tx-amount">
+        <div class="tx-val">300.00 TMR</div>
+        <div class="tx-fee">Fee: 0.001</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Network Info -->
+  <div class="info-card">
+    <div class="panel-title">
+      <div class="panel-title-dot"></div>
+      Network Information
+    </div>
+    <div class="info-grid">
+      <div class="info-field">
+        <div class="info-key">Network Name</div>
+        <div class="info-val teal">TMR Chain Mainnet</div>
+      </div>
+      <div class="info-field">
+        <div class="info-key">Chain ID (Hex)</div>
+        <div class="info-val">0x544D52</div>
+      </div>
+      <div class="info-field">
+        <div class="info-key">Chain ID (Decimal)</div>
+        <div class="info-val">5,524,050</div>
+      </div>
+      <div class="info-field">
+        <div class="info-key">Currency Symbol</div>
+        <div class="info-val gold">TMR</div>
+      </div>
+      <div class="info-field">
+        <div class="info-key">Decimals</div>
+        <div class="info-val">1</div>
+      </div>
+      <div class="info-field">
+        <div class="info-key">Total Supply</div>
+        <div class="info-val gold">10,000,000,000 TMR</div>
+      </div>
+      <div class="info-field">
+        <div class="info-key">Token Standard</div>
+        <div class="info-val">TMR-2007</div>
+      </div>
+      <div class="info-field">
+        <div class="info-key">RPC Endpoint</div>
+        <div class="info-val" style="font-size:11px">tmr-chain.onrender.com/rpc</div>
+      </div>
+      <div class="info-field">
+        <div class="info-key">Status</div>
+        <div class="info-val teal">● ONLINE</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- FOOTER -->
+<footer>
+  TMR Chain Explorer · Mainnet · Chain ID <span>5524050</span> · Built on TMR-2007 Standard
+</footer>
+
+<script>
+  // ── CONFIG ──
+  const RPC_BASE = 'https://tmr-chain.onrender.com'; // change to your deployed Render URL
+
+  function shortHash(h, len = 6) {
+    if (!h) return '—';
+    return h.slice(0, len + 2) + '…' + h.slice(-4);
+  }
+
+  function timeAgo(ts) {
+    const s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 60) return s + 's ago';
+    if (s < 3600) return Math.floor(s / 60) + 'm ago';
+    return Math.floor(s / 3600) + 'h ago';
+  }
+
+  async function api(path) {
+    const res = await fetch(RPC_BASE + path);
+    if (!res.ok) throw new Error('Request failed: ' + path);
+    return res.json();
+  }
+
+  async function doSearch() {
+    const v = document.getElementById('searchInput').value.trim();
+    if (!v) return;
+    try {
+      const data = await api('/search/' + encodeURIComponent(v));
+      alert(data.type.toUpperCase() + ' found:\n\n' + JSON.stringify(data.result, null, 2));
+    } catch (e) {
+      alert('Not found, or RPC is offline.\n\nMake sure your server is deployed and RPC_BASE in explorer.html is set correctly.');
+    }
+  }
+
+  document.getElementById('searchInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doSearch();
+  });
+
+  function renderBlocks(blocks) {
+    const panel = document.querySelectorAll('.panel')[0];
+    const rows = blocks.slice(0, 5).map(b => `
+      <div class="block-row">
+        <div class="block-num-wrap"><div class="block-num-label">BLK</div><div class="block-num">${b.number}</div></div>
+        <div class="block-info">
+          <div class="block-hash">${shortHash(b.hash)}</div>
+          <div class="block-meta">${timeAgo(b.timestamp)} · Validator: ${b.validator}</div>
+        </div>
+        <div class="block-txs"><div class="tx-count">${b.txCount}</div><div class="tx-label">txns</div></div>
+      </div>
+    `).join('');
+    const header = panel.querySelector('.panel-header').outerHTML;
+    panel.innerHTML = header + rows;
+  }
+
+  function renderTxns(txns) {
+    const panel = document.querySelectorAll('.panel')[1];
+    const rows = txns.slice(0, 5).map(t => `
+      <div class="tx-row">
+        <div class="tx-icon">↗</div>
+        <div class="tx-info">
+          <div class="tx-hash">${shortHash(t.hash, 8)}</div>
+          <div class="tx-addrs">${shortHash(t.from, 4)} → ${shortHash(t.to, 4)}</div>
+        </div>
+        <div class="tx-amount">
+          <div class="tx-val">${t.amount} TMR</div>
+          <div class="tx-fee">Fee: ${t.fee}</div>
+        </div>
+      </div>
+    `).join('');
+    const header = panel.querySelector('.panel-header').outerHTML;
+    panel.innerHTML = header + (rows || '<div style="padding:24px;text-align:center;color:var(--text-dim);font-size:13px;">No transactions yet</div>');
+  }
+
+  async function refreshData() {
+    try {
+      const [network, blocks, txns, tokens] = await Promise.all([
+        api('/network'),
+        api('/blocks?limit=5'),
+        api('/transactions?limit=5'),
+        api('/tokens'),
+      ]);
+
+      document.getElementById('latestBlock').textContent = network.latestBlock.toLocaleString();
+      renderBlocks(blocks.blocks);
+      renderTxns(txns.transactions);
+
+      document.querySelectorAll('.hero-eyebrow')[0].innerHTML =
+        '<div class="pulse-dot"></div> Live Network · Block #' + network.latestBlock;
+
+    } catch (e) {
+      console.warn('RPC offline or unreachable:', e.message);
+      document.querySelectorAll('.hero-eyebrow')[0].innerHTML =
+        '<div class="pulse-dot" style="background:var(--red)"></div> RPC Offline — showing demo data';
+    }
+  }
+
+  refreshData();
+  setInterval(refreshData, 6000);
+</script>
+</body>
+</html>
